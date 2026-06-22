@@ -267,9 +267,15 @@ with col1:
         ))
         fig1.add_hline(y=75, line_dash="dash", line_color="#e85c5c",
                        annotation_text="Umbral 75%", annotation_font_color="#e85c5c")
-        fig1.update_layout(**PLOTLY_THEME, height=280,
-                           yaxis=dict(**PLOTLY_THEME["yaxis"], range=[0, 105]))
+        
+        # 1. Configuración del diseño sin meter el eje Y aquí adentro
+        fig1.update_layout(**PLOTLY_THEME, height=280)
+        
+        # 2. Configuración del eje Y de forma independiente para evitar duplicados
+        fig1.update_yaxes(range=[0, 105])
+        
         st.plotly_chart(fig1, use_container_width=True)
+
 
 # ── Gráfica 2: Frecuencia por evento
 with col2:
