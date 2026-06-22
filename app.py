@@ -10,7 +10,7 @@ from datetime import datetime
 # ─────────────────────────────────────────────
 # CONFIGURACIÓN — cambia solo estas dos líneas
 # ─────────────────────────────────────────────
-GITHUB_RAW_URL = "https://raw.githubusercontent.com/Loren-Arq/mi_proyecto_esp32/main/datos/excel/reporte_2026-06-14.xlsx"
+GITHUB_RAW_URL = "https://raw.githubusercontent.com/Loren-Aedes-ai/Proyecto_Final/main/datos/excel/reporte_2026-06-14.xlsx"
 REFRESH_SECONDS = 30  # actualiza cada 30 segundos
 # ─────────────────────────────────────────────
 
