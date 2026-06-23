@@ -8,3 +8,4 @@ PyGithub
 plotly
 folium
 streamlit-folium
+streamlit-autorefresh
