@@ -46,7 +46,7 @@ import requests as req_github
 GITHUB_TOKEN     = os.getenv("GITHUB_TOKEN")
 GITHUB_USER      = os.getenv("GITHUB_USER")
 GITHUB_REPO      = os.getenv("GITHUB_REPO")
-GITHUB_PATH_BASE = "datos/excel"
+GITHUB_PATH_BASE = "datos/excel/"
 
 print("DEBUG TOKEN:", GITHUB_TOKEN)
 print("DEBUG USER :", GITHUB_USER)
