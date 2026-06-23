@@ -7,7 +7,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime
+from datetime import datetime, timedelta
+from streamlit_autorefresh import st_autorefresh  # <-- Importante ponerlo aquí
+import requests
+import io
+
 
 # ==============================================================================
 # --- CONFIGURACIÓN DE LA PÁGINA ---
