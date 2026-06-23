@@ -7,11 +7,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import folium
 from streamlit_folium import st_folium
-from datetime import datetime, timedelta
-from streamlit_autorefresh import st_autorefresh  # <-- Importante ponerlo aquí
 import requests
 import io
-
+from datetime import datetime, timedelta
+import time
 
 # ==============================================================================
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -33,10 +32,7 @@ st.markdown('<p class="subtitle">Análisis de datos acústicos e inferencia de I
 # ==============================================================================
 @st.cache_data(ttl=30)
 def cargar_datos_reportes():
-    import requests
-    import io
-    from datetime import datetime, timedelta
-
+    
     USUARIO  = "Loren-Aedes-ai"
     REPO     = "Proyecto-Final"
     RAMA     = "main"
@@ -247,3 +243,9 @@ with col_analisis_2:
         st.dataframe(df_tabla, use_container_width=True, height=350)
     else:
         st.info("No hay registros para mostrar bajo el filtro seleccionado.")
+  
+# ==============================================================================
+# --- REFRESCO AUTOMÁTICO (COLOCAR AL FINAL DE TODO EL ARCHIVO) ---
+# ==============================================================================
+time.sleep(30)
+st.rerun()
