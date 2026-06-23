@@ -84,8 +84,22 @@ if df_global.empty:
 # --- FILTROS LATERALES ---
 # ==============================================================================
 st.sidebar.header("🎛️ Filtros Globales")
+# Añadimos el botón en la barra lateral
+if st.sidebar.button("🔄 Actualizar Datos", use_container_width=True):
+    st.cache_data.clear()  # <- Limpia el caché para forzar la descarga de GitHub
+    st.rerun()             # <- Recarga la app con los datos nuevos inmediatamente
 lista_meses = sorted(df_global['Mes'].unique())
 mes_seleccionado = st.sidebar.selectbox("Seleccionar Mes de Análisis:", ["Todos los meses"] + lista_meses)
+# ==============================================================================
+# --- CARGA Y FILTRADO DE LOS DATOS ---
+# ==============================================================================
+# Llamamos a la función (si se presionó el botón, traerá lo más nuevo de GitHub)
+df_global = cargar_datos_reportes()
+
+if df_global.empty:
+    st.warning("⚠️ No se encontraron reportes recientes en GitHub. Verifica que Railway esté activo.")
+    st.stop()
+
 
 # Filtrado del DataFrame objetivo
 if mes_seleccionado != "Todos los meses":
@@ -244,8 +258,3 @@ with col_analisis_2:
     else:
         st.info("No hay registros para mostrar bajo el filtro seleccionado.")
   
-# ==============================================================================
-# --- REFRESCO AUTOMÁTICO (COLOCAR AL FINAL DE TODO EL ARCHIVO) ---
-# ==============================================================================
-time.sleep(30)
-st.rerun()
