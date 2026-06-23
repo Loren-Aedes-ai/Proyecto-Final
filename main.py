@@ -48,8 +48,8 @@ GITHUB_USER      = os.getenv("GITHUB_USER")
 GITHUB_REPO      = os.getenv("GITHUB_REPO")
 GITHUB_PATH_BASE = "datos/excel/"
 
-print("DEBUG TOKEN:", GITHUB_TOKEN)
-print("DEBUG USER :", GITHUB_USER)
+# print("DEBUG TOKEN:", GITHUB_TOKEN)
+# print("DEBUG USER :", GITHUB_USER)
 print("DEBUG REPO :", GITHUB_REPO)
 print("DEBUG PATH_BASE:", GITHUB_PATH_BASE)
 
