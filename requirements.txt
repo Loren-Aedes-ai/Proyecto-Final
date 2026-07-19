@@ -5,7 +5,6 @@ tensorflow-cpu==2.21.0
 librosa==0.11.0
 numpy==1.26.4
 pandas
-openpyxl
 scipy
 requests
 scikit-learn
@@ -15,4 +14,6 @@ plotly
 folium
 streamlit-folium
 requests
-
+ gspread
+ google-auth
+ google-api-python-client

@@ -1,11 +1,9 @@
 import os
-import io
-from io import BytesIO
+import json
 import time
 import pytz
 import wave
 import librosa
-import requests
 import threading
 import numpy as np
 import tensorflow as tf
@@ -15,11 +13,13 @@ import uvicorn
 from scipy.signal import butter, lfilter
 from contextlib import asynccontextmanager
 import traceback
-import openpyxl
 import base64
-from pathlib import Path
 
-# ==============================================================================
+import gspread
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
 # --- 1. CONFIGURACIÓN GLOBAL ---
 # ==============================================================================
 API_PORT       = int(os.environ.get("PORT", 8080))
@@ -35,123 +35,110 @@ input_details  = None
 output_details = None
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 contador_evento = 1
 
 # ==============================================================================
-# --- 2. EXCEL EN GITHUB ---
+# --- 2. GOOGLE SHEETS (datos) + GOOGLE DRIVE (audios .wav) ---
 # ==============================================================================
-import requests as req_github
+GOOGLE_SHEETS_ID        = os.getenv("GOOGLE_SHEETS_ID")
+GOOGLE_SHEETS_CREDS_B64 = os.getenv("GOOGLE_SHEETS_CREDS_B64")
+GOOGLE_SHEETS_TAB       = os.getenv("GOOGLE_SHEETS_TAB", "Registros")
+GOOGLE_DRIVE_FOLDER_ID  = os.getenv("GOOGLE_DRIVE_FOLDER_ID")  # carpeta donde se guardan los .wav
 
-GITHUB_TOKEN     = os.getenv("GITHUB_TOKEN")
-GITHUB_USER      = os.getenv("GITHUB_USER")
-GITHUB_REPO      = os.getenv("GITHUB_REPO")
-GITHUB_PATH_BASE = "datos/excel"
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive.file",
+]
 
-# print("DEBUG TOKEN:", GITHUB_TOKEN)
-# print("DEBUG USER :", GITHUB_USER)
-print("DEBUG REPO :", GITHUB_REPO)
-print("DEBUG PATH_BASE:", GITHUB_PATH_BASE)
-
-if not all([GITHUB_TOKEN, GITHUB_USER, GITHUB_REPO]):
-    raise ValueError("❌ Faltan variables GitHub en el entorno del servidor.")
-
-EXCEL_HEADERS = [
+SHEET_HEADERS = [
     "Evento", "Fecha", "Hora", "Distancia (mm)",
     "Frecuencia (Hz)", "Amplitud (dB)", "Probabilidad (%)",
     "Armónicos", "Latencia Red (ms)", "Latencia CNN (ms)", "Alerta"
 ]
 
+gs_client      = None
+gs_worksheet   = None
+drive_service  = None
+gs_lock        = threading.Lock()  # gspread no es thread-safe, protegemos escrituras
 
-def guardar_en_excel_local(fila: list):
-    """Descarga el Excel del día actual de GitHub, agrega la fila y lo vuelve a subir."""
-    if not GITHUB_TOKEN or not GITHUB_USER or not GITHUB_REPO:
-        raise ValueError("❌ Faltan variables GitHub.")
+print("DEBUG GOOGLE_SHEETS_ID       :", GOOGLE_SHEETS_ID)
+print("DEBUG GOOGLE_SHEETS_TAB      :", GOOGLE_SHEETS_TAB)
+print("DEBUG GOOGLE_DRIVE_FOLDER_ID :", GOOGLE_DRIVE_FOLDER_ID)
+
+if not all([GOOGLE_SHEETS_ID, GOOGLE_SHEETS_CREDS_B64]):
+    raise ValueError("❌ Faltan variables de Google Sheets en el entorno del servidor "
+                      "(GOOGLE_SHEETS_ID / GOOGLE_SHEETS_CREDS_B64).")
+
+if not GOOGLE_DRIVE_FOLDER_ID:
+    print("  ⚠️ GOOGLE_DRIVE_FOLDER_ID no configurado: los .wav no se subirán a Drive "
+          "(solo se guardarán los datos en Sheets).")
+
+
+def iniciar_google_apis():
+    """Autentica una sola vez con la cuenta de servicio y deja listos Sheets y Drive."""
+    global gs_client, gs_worksheet, drive_service
+
+    creds_json = base64.b64decode(GOOGLE_SHEETS_CREDS_B64).decode("utf-8")
+    creds_dict = json.loads(creds_json)
+    creds      = Credentials.from_service_account_info(creds_dict, scopes=GOOGLE_SCOPES)
+
+    # --- Sheets ---
+    gs_client = gspread.authorize(creds)
+    sh = gs_client.open_by_key(GOOGLE_SHEETS_ID)
 
     try:
-        headers_gh = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
+        gs_worksheet = sh.worksheet(GOOGLE_SHEETS_TAB)
+    except gspread.WorksheetNotFound:
+        gs_worksheet = sh.add_worksheet(title=GOOGLE_SHEETS_TAB, rows=2000, cols=len(SHEET_HEADERS) + 2)
 
-        zona_guatemala = pytz.timezone("America/Guatemala")
-        fecha_hoy      = datetime.now(zona_guatemala).strftime("%Y-%m-%d")
-        nombre_excel   = f"reporte_{fecha_hoy}.xlsx"
-        ruta_github_archivo = f"{GITHUB_PATH_BASE}/{nombre_excel}"
-        url_archivo = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{ruta_github_archivo}"
+    primera_fila = gs_worksheet.row_values(1)
+    if primera_fila != SHEET_HEADERS:
+        gs_worksheet.resize(rows=max(gs_worksheet.row_count, 2))
+        gs_worksheet.update("A1", [SHEET_HEADERS])
 
-        response = req_github.get(url_archivo, headers=headers_gh)
-        sha = None
+    print(f"  ✅ Google Sheets conectado → tab '{GOOGLE_SHEETS_TAB}'")
 
-        if response.status_code == 200:
-            data      = response.json()
-            sha       = data["sha"]
-            contenido = base64.b64decode(data["content"])
-            wb        = openpyxl.load_workbook(BytesIO(contenido))
-            ws        = wb.active
-            print(f"  📥 Excel del día ({nombre_excel}) descargado de GitHub.")
-        else:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Registros Aedes"
-            ws.append(EXCEL_HEADERS)
-            print(f"  📄 Creando nuevo Excel para el día de hoy: {nombre_excel}")
-
-        ws.append(fila)
-
-        buffer        = BytesIO()
-        wb.save(buffer)
-        contenido_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-        payload = {
-            "message": f"Evento #{fila[0]} registrado en {nombre_excel}",
-            "content": contenido_b64
-        }
-        if sha:
-            payload["sha"] = sha
-
-        put_response = req_github.put(url_archivo, headers=headers_gh, json=payload)
-
-        if put_response.status_code in [200, 201]:
-            print(f"  ✅ Excel guardado exitosamente en: {ruta_github_archivo}")
-        else:
-            print(f"  ❌ GitHub respondió {put_response.status_code}: {put_response.text}")
-
-    except Exception as e:
-        print(f"  ❌ Error al guardar Excel en GitHub: {e}")
-        traceback.print_exc()
+    # --- Drive ---
+    drive_service = build("drive", "v3", credentials=creds)
+    print("  ✅ Google Drive conectado")
 
 
-def subir_wav_a_github(ruta_wav: str, nombre_archivo: str):
-    """Sube el archivo .wav a GitHub en la carpeta audios/"""
-    if not all([GITHUB_TOKEN, GITHUB_USER, GITHUB_REPO]):
-        print("⚠️ Faltan variables GitHub para subir WAV.")
+def guardar_en_google_sheets(fila: list):
+    """Agrega una fila de evento a la hoja de Google Sheets, con reintentos."""
+    if gs_worksheet is None:
+        raise RuntimeError("Google Sheets no está inicializado.")
+
+    fila_str = [str(x) for x in fila]
+
+    ultimo_error = None
+    for intento in range(3):
+        try:
+            with gs_lock:
+                gs_worksheet.append_row(fila_str, value_input_option="USER_ENTERED")
+            return
+        except Exception as e:
+            ultimo_error = e
+            print(f"  ⚠️ Intento {intento + 1}/3 falló escribiendo en Sheets: {e}")
+            time.sleep(1.5 * (intento + 1))
+
+    raise RuntimeError(f"No se pudo escribir en Google Sheets tras 3 intentos: {ultimo_error}")
+
+
+def subir_wav_a_google_drive(ruta_wav: str, nombre_archivo: str):
+    """Sube el .wav a la carpeta de Google Drive configurada (reemplaza a GitHub)."""
+    if drive_service is None or not GOOGLE_DRIVE_FOLDER_ID:
         return
 
     try:
-        with open(ruta_wav, "rb") as f:
-            contenido_b64 = base64.b64encode(f.read()).decode("utf-8")
-
-        fecha_hoy   = datetime.now().strftime("%Y-%m-%d")
-        ruta_github = f"audios/{fecha_hoy}/{nombre_archivo}"
-        url         = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/{ruta_github}"
-
-        headers_gh = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
+        metadata = {
+            "name": nombre_archivo,
+            "parents": [GOOGLE_DRIVE_FOLDER_ID],
         }
-        payload = {
-            "message": f"Audio {nombre_archivo}",
-            "content": contenido_b64
-        }
-
-        response = req_github.put(url, headers=headers_gh, json=payload)
-        if response.status_code in [200, 201]:
-            print(f"  🎵 WAV subido a GitHub: {ruta_github}")
-        else:
-            print(f"  ❌ Error subiendo WAV: {response.status_code}")
+        media  = MediaFileUpload(ruta_wav, mimetype="audio/wav", resumable=False)
+        result = drive_service.files().create(body=metadata, media_body=media, fields="id").execute()
+        print(f"  🎵 WAV subido a Google Drive: {nombre_archivo} (id={result.get('id')})")
     except Exception as e:
-        print(f"  ❌ Error subiendo WAV a GitHub: {e}")
+        print(f"  ❌ Error subiendo WAV a Google Drive: {e}")
 
 
 # ==============================================================================
@@ -327,13 +314,13 @@ def procesar_audio_e_inferencia(raw_audio, distancia_mm, hora_detectada,
         print(f"{sep}\n")
 
         try:
-            guardar_en_excel_local(fila)
-            print(f"✅ Excel guardado correctamente en GitHub")
+            guardar_en_google_sheets(fila)
+            print(f"✅ Fila guardada correctamente en Google Sheets")
         except Exception as e:
-            print(f"❌ Error guardando Excel en GitHub: {type(e).__name__}: {e}")
+            print(f"❌ Error guardando en Google Sheets: {type(e).__name__}: {e}")
             traceback.print_exc()
 
-        subir_wav_a_github(ruta_wav, nombre_archivo)
+        subir_wav_a_google_drive(ruta_wav, nombre_archivo)
 
         if os.path.exists(ruta_wav):
             os.remove(ruta_wav)
@@ -362,12 +349,14 @@ async def lifespan(app: FastAPI):
     output_details = interpreter.get_output_details()
 
     print("✅ Motor TFLite listo.")
+
+    print("🚀 Conectando a Google Sheets y Google Drive...")
+    iniciar_google_apis()
+
     yield
     print("🛑 Servidor apagado.")
 
-
 app = FastAPI(lifespan=lifespan)
-
 
 @app.post("/predict")
 async def recibir_audio_wifi(request: Request, background_tasks: BackgroundTasks):
