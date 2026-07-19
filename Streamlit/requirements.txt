@@ -1,10 +1,8 @@
 streamlit
 pandas
-openpyxl
-scipy
-requests
-scikit-learn
-PyGithub
 plotly
 folium
 streamlit-folium
+streamlit-autorefresh
+gspread
+google-auth
