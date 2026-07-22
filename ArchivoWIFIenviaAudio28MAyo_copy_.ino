@@ -6,8 +6,8 @@
 #include <WiFiClientSecure.h>  // ← AGREGA ESTA LÍNEA
 
 // --- CONFIGURACIÓN DE RED ---
-const char* ssid     = ""; 
-const char* password = "";
+const char* ssid     = "Nombre_RED"; 
+const char* password = "Pass_Red";
 
 //  
 const char* serverUrl = "https://proyecto-final-production-df19.up.railway.app/predict"; 
