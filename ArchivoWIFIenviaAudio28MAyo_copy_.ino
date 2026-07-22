@@ -6,8 +6,8 @@
 #include <WiFiClientSecure.h>  // ← AGREGA ESTA LÍNEA
 
 // --- CONFIGURACIÓN DE RED ---
-const char* ssid     = "TIGO 54G 4E"; 
-const char* password = "4801313";
+const char* ssid     = ""; 
+const char* password = "";
 
 //  
 const char* serverUrl = "https://proyecto-final-production-df19.up.railway.app/predict"; 
